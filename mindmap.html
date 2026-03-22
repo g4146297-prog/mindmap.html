@@ -76,8 +76,8 @@
     top: calc(100% + 6px);
     left: 0;
     width: 100%;
-    background: #1c212b; /* ノード本体とは異なる少し明るい背景 */
-    border: 1px dashed #3a4254; /* 破線で「付随メモ」感を出す */
+    background: #1c212b;
+    border: 1px dashed #3a4254;
     border-radius: 6px;
     padding: 6px 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.25);
@@ -252,7 +252,7 @@ function renderNode(node) {
     });
 
     $canvas.appendChild(el);
-    refreshTasks(node.id); // タスクリストの初回描画
+    refreshTasks(node.id);
 }
 
 // タスク追加処理
@@ -274,7 +274,7 @@ function refreshTasks(nodeId) {
     if (!tb) {
         tb = document.createElement('div');
         tb.className = 'task-board';
-        tb.addEventListener('mousedown', e => e.stopPropagation()); // ボード上の操作を親に伝播させない
+        tb.addEventListener('mousedown', e => e.stopPropagation());
         tb.addEventListener('click', e => e.stopPropagation());
         el.appendChild(tb);
     }
@@ -301,13 +301,11 @@ function refreshTasks(nodeId) {
         inp.placeholder = 'タスクを入力...';
         if (t.done) inp.classList.add('done');
         
-        // チェックボックス切り替えイベント
         cb.addEventListener('change', e => {
             t.done = e.target.checked;
             inp.classList.toggle('done', t.done);
         });
 
-        // テキスト入力イベント
         inp.addEventListener('input', e => {
             t.text = e.target.value;
         });
@@ -370,8 +368,12 @@ function deleteEdge(eid) {
 }
 
 function addNode(type) {
-    const x = 60 + Math.random() * (wrap.clientWidth - 280);
-    const y = 40 + Math.random() * (wrap.clientHeight - 120);
+    // 【修正】画面外（マイナス座標）への生成を防ぐための安全値確保
+    const W = wrap.clientWidth || window.innerWidth || 800;
+    const H = wrap.clientHeight || window.innerHeight || 600;
+    const x = Math.max(40, 60 + Math.random() * (W - 280));
+    const y = Math.max(40, 40 + Math.random() * (H - 120));
+    
     const def = { root: 'テーマ・問い', question: 'どちらですか？', branch: '条件 / 場合', leaf: '結論・アクション' };
     selectNode(createNode(type, def[type], x, y).id);
 }
@@ -541,10 +543,8 @@ function exportSVG() {
     nodes.forEach(n => {
         const el = document.getElementById('node-' + n.id); if (!el) return;
         
-        // メインノードの描画
         o += `<rect x="${n.x}" y="${n.y}" width="${el.offsetWidth}" height="${el.offsetHeight}" rx="10" fill="${bc[n.type]}" stroke="#252830" stroke-width="1.5"/><text x="${n.x + 10}" y="${n.y + 20}" font-family="sans-serif" font-size="10" fill="${META[n.type].color}">${META[n.type].label}</text><text x="${n.x + 10}" y="${n.y + 38}" font-family="sans-serif" font-size="13" fill="#e8eaf0">${(n.text || '').replace(/</g, '&lt;').substring(0, 28)}</text>`;
         
-        // タスクボックスの描画（存在する場合）
         if (n.tasks && n.tasks.length > 0) {
             let ty = n.y + el.offsetHeight + 6;
             let th = n.tasks.length * 24 + 12;
@@ -554,14 +554,8 @@ function exportSVG() {
                 let boxColor = t.done ? '#40d9a0' : '#5a5f70';
                 let textColor = t.done ? '#6b7280' : '#d1d5db';
                 let tDeco = t.done ? 'text-decoration="line-through"' : '';
-                
-                // チェックボックスの四角
                 o += `<rect x="${n.x + 8}" y="${ty + 10 + i * 24}" width="12" height="12" rx="2" fill="none" stroke="${boxColor}" stroke-width="1.5"/>`;
-                
-                // チェックマーク（完了時のみ）
                 if (t.done) o += `<path d="M${n.x + 11},${ty + 16 + i * 24} L${n.x + 13},${ty + 18 + i * 24} L${n.x + 17},${ty + 13 + i * 24}" stroke="#40d9a0" stroke-width="1.5" fill="none"/>`;
-                
-                // タスクのテキスト
                 o += `<text x="${n.x + 26}" y="${ty + 20 + i * 24}" font-family="sans-serif" font-size="11" fill="${textColor}" ${tDeco}>${(t.text || '').replace(/</g, '&lt;')}</text>`;
             });
         }
@@ -580,31 +574,45 @@ function exportSVG() {
 }
 
 function initSample() {
-    const H = wrap.clientHeight, cy = H / 2;
-    const r = createNode('root', 'システム開発要件定義', 40, cy - 35);
-    
-    // サンプルとしてルートノードにタスクを2つ追加しておく
-    r.tasks = [
-        { id: tuid(), text: 'マインドマップのUI設計', done: true },
-        { id: tuid(), text: 'タスク管理機能の実装', done: false }
-    ];
-    refreshTasks(r.id);
+    try {
+        // 【修正】画面外配置を防ぐため、最低限の高さを担保
+        const W = wrap.clientWidth || window.innerWidth || 1000;
+        const H = wrap.clientHeight || window.innerHeight || 800;
+        const cy = Math.max(H / 2, 300); 
 
-    const q1 = createNode('question', '機能Aは必要か？', 290, cy - 35);
-    const y1 = createNode('leaf', '→ 機能Aを実装する', 540, cy - 155);
-    const n1 = createNode('question', '代替案は？', 540, cy + 105);
-    const y2 = createNode('leaf', '→ 代替案Xを採用', 790, cy - 5);
-    const n2 = createNode('leaf', '→ 代替案Yを採用', 790, cy + 210);
-    
-    edges.push({ id: euid(), from: r.id, to: q1.id, label: '' });
-    edges.push({ id: euid(), from: q1.id, to: y1.id, label: 'はい' });
-    edges.push({ id: euid(), from: q1.id, to: n1.id, label: 'いいえ' });
-    edges.push({ id: euid(), from: n1.id, to: y2.id, label: 'はい' });
-    edges.push({ id: euid(), from: n1.id, to: n2.id, label: 'いいえ' });
-    drawEdges(); refreshChangeBtns();
+        const r = createNode('root', 'システム開発要件定義', 40, cy - 35);
+        
+        r.tasks = [
+            { id: tuid(), text: 'マインドマップのUI設計', done: true },
+            { id: tuid(), text: 'タスク管理機能の実装', done: false }
+        ];
+        refreshTasks(r.id);
+
+        const q1 = createNode('question', '機能Aは必要か？', 290, cy - 35);
+        const y1 = createNode('leaf', '→ 機能Aを実装する', 540, cy - 155);
+        const n1 = createNode('question', '代替案は？', 540, cy + 105);
+        const y2 = createNode('leaf', '→ 代替案Xを採用', 790, cy - 5);
+        const n2 = createNode('leaf', '→ 代替案Yを採用', 790, cy + 210);
+        
+        edges.push({ id: euid(), from: r.id, to: q1.id, label: '' });
+        edges.push({ id: euid(), from: q1.id, to: y1.id, label: 'はい' });
+        edges.push({ id: euid(), from: q1.id, to: n1.id, label: 'いいえ' });
+        edges.push({ id: euid(), from: n1.id, to: y2.id, label: 'はい' });
+        edges.push({ id: euid(), from: n1.id, to: n2.id, label: 'いいえ' });
+        drawEdges(); 
+        refreshChangeBtns();
+    } catch(e) {
+        console.error("Initialization error:", e);
+    }
 }
 
-window.addEventListener('load', () => setTimeout(initSample, 80));
+// 【修正】Streamlitのiframe読み込みタイミングのズレに対応
+function startApp() { setTimeout(initSample, 150); }
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}
 </script>
 </body>
 </html>
