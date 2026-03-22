@@ -41,12 +41,9 @@
   svg#svgl{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;overflow:visible;}
   svg#svgl .ehit{pointer-events:stroke;}
   
-  /* ▼キャンバスへのクリックを背後（SVG）に貫通させる設定を追加 */
   #canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;}
 
-  /* ▼ノード自体はクリックをしっかり受け付ける設定を追加 */
   .node{position:absolute;min-width:140px;max-width:210px;border-radius:10px;border:1.5px solid var(--border);padding:10px 28px 10px 13px;cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s;z-index:10;pointer-events:auto;}
-  
   .node:hover{border-color:var(--muted);box-shadow:var(--shadow);z-index:20;}
   .node.selected{border-color:var(--accent)!important;box-shadow:0 0 0 3px rgba(91,143,255,.22),var(--shadow);z-index:30;}
   .node.dragging{cursor:grabbing;z-index:40;}
@@ -55,15 +52,73 @@
   .ntype-branch  {background:#1a2535;}
   .ntype-leaf    {background:#1a2520;}
   .ntype-question{background:#2a1f35;border-radius:14px;}
+  
   .nlabel{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;}
   .ntype-root     .nlabel{color:var(--accent);}
   .ntype-branch   .nlabel{color:var(--accent4);}
   .ntype-leaf     .nlabel{color:var(--accent3);}
   .ntype-question .nlabel{color:var(--accent2);}
+  
   .ntext{font-size:13px;line-height:1.5;color:var(--text);outline:none;background:transparent;border:none;width:100%;resize:none;font-family:'Zen Kaku Gothic New',sans-serif;cursor:text;}
+  
+  /* 操作ボタン類 */
   .ndel{position:absolute;top:5px;right:6px;width:17px;height:17px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:13px;line-height:17px;cursor:pointer;text-align:center;display:none;transition:color .1s,background .1s;}
   .node:hover .ndel,.node.selected .ndel{display:block;}
   .ndel:hover{color:var(--accent2);background:rgba(255,107,138,.12);}
+
+  .ntask-add{position:absolute;top:5px;right:26px;width:17px;height:17px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:11px;line-height:17px;cursor:pointer;text-align:center;display:none;transition:color .1s,background .1s;}
+  .node:hover .ntask-add,.node.selected .ntask-add{display:block;}
+  .ntask-add:hover{color:var(--accent3);background:rgba(64,217,160,.12);}
+
+  /* タスク・メモ用の子ボード（ノードの下にぶら下がるデザイン） */
+  .task-board {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 100%;
+    background: #1c212b; /* ノード本体とは異なる少し明るい背景 */
+    border: 1px dashed #3a4254; /* 破線で「付随メモ」感を出す */
+    border-radius: 6px;
+    padding: 6px 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    pointer-events: auto;
+    cursor: default;
+  }
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+  .task-row:last-child { margin-bottom: 0; }
+  .task-row input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--accent3);
+    flex-shrink: 0;
+  }
+  .task-row input[type="text"] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #d1d5db;
+    font-size: 11px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    outline: none;
+    min-width: 0;
+  }
+  .task-row input[type="text"].done {
+    text-decoration: line-through;
+    color: #6b7280;
+  }
+  .task-del {
+    background: transparent;
+    border: none;
+    color: #5a5f70;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .task-del:hover { color: var(--accent2); }
 
   .port{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--muted);border:2.5px solid var(--bg);cursor:crosshair;z-index:50;opacity:0;transition:opacity .1s,transform .1s,background .1s;pointer-events:auto;}
   .node:hover .port,.node.selected .port{opacity:1;}
@@ -75,7 +130,6 @@
   .egroup:hover .epath{stroke-width:2.5;opacity:1;}
   .ehit{stroke:transparent;stroke-width:14;fill:none;cursor:pointer;pointer-events:stroke;}
   
-  /* ▼ラベル入力欄もクリックを受け付けるように設定 */
   .elabel-inp{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:'DM Mono',monospace;font-size:10px;padding:1px 5px;outline:none;width:70px;pointer-events:auto;}
 
   #hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap;z-index:100;pointer-events:none;}
@@ -117,7 +171,7 @@
   <div id="canvas"></div>
 </div>
 
-<div id="hint">ポートをドラッグ → 接続　／　エッジをクリック → 削除　／　ノード選択 → 上部で種類変更</div>
+<div id="hint">ポートをドラッグ → 接続 ／ エッジをクリック → 削除 ／ ノード選択 → 種類変更 ／ 📋 → タスク追加</div>
 <div id="ctxm"><button onclick="ctxDel()" style="color:var(--accent2)">🗑 ノード削除</button></div>
 
 <script>
@@ -137,10 +191,11 @@ const wrap = document.getElementById('canvas-wrap');
 
 function uid() { return 'n' + (++nc); }
 function euid() { return 'e' + (++ec); }
+function tuid() { return 't' + Math.random().toString(36).substr(2, 9); }
 
 function createNode(type, text, x, y) {
     const id = uid();
-    const node = { id, type, text, x, y };
+    const node = { id, type, text, x, y, tasks: [] };
     nodes.push(node);
     renderNode(node);
     return node;
@@ -153,7 +208,8 @@ function renderNode(node) {
     el.style.cssText = `left:${node.x}px;top:${node.y}px`;
     
     el.innerHTML = `
-        <button class="ndel" onclick="deleteNode('${node.id}')">×</button>
+        <button class="ntask-add" onclick="addTask('${node.id}')" title="タスクを追加">📋</button>
+        <button class="ndel" onclick="deleteNode('${node.id}')" title="削除">×</button>
         <div class="nlabel">${META[node.type].label}</div>
         <textarea class="ntext" rows="2"></textarea>
         <div class="port port-out" data-id="${node.id}"></div>
@@ -180,7 +236,7 @@ function renderNode(node) {
     });
 
     el.addEventListener('mousedown', e => {
-        if (e.target.classList.contains('port') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+        if (e.target.classList.contains('port') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
         e.preventDefault();
         selectNode(node.id);
         const r = el.getBoundingClientRect();
@@ -196,6 +252,79 @@ function renderNode(node) {
     });
 
     $canvas.appendChild(el);
+    refreshTasks(node.id); // タスクリストの初回描画
+}
+
+// タスク追加処理
+function addTask(nodeId) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    if (!node.tasks) node.tasks = [];
+    node.tasks.push({ id: tuid(), text: '', done: false });
+    refreshTasks(nodeId);
+}
+
+// タスク（サブボード）の描画更新
+function refreshTasks(nodeId) {
+    const node = nodes.find(n => n.id === nodeId);
+    const el = document.getElementById('node-' + nodeId);
+    if (!node || !el) return;
+
+    let tb = el.querySelector('.task-board');
+    if (!tb) {
+        tb = document.createElement('div');
+        tb.className = 'task-board';
+        tb.addEventListener('mousedown', e => e.stopPropagation()); // ボード上の操作を親に伝播させない
+        tb.addEventListener('click', e => e.stopPropagation());
+        el.appendChild(tb);
+    }
+
+    if (!node.tasks || node.tasks.length === 0) {
+        tb.style.display = 'none';
+        return;
+    }
+
+    tb.style.display = 'block';
+    tb.innerHTML = '';
+
+    node.tasks.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'task-row';
+        
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = t.done;
+        
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = t.text;
+        inp.placeholder = 'タスクを入力...';
+        if (t.done) inp.classList.add('done');
+        
+        // チェックボックス切り替えイベント
+        cb.addEventListener('change', e => {
+            t.done = e.target.checked;
+            inp.classList.toggle('done', t.done);
+        });
+
+        // テキスト入力イベント
+        inp.addEventListener('input', e => {
+            t.text = e.target.value;
+        });
+
+        const del = document.createElement('button');
+        del.className = 'task-del';
+        del.innerHTML = '×';
+        del.onclick = () => {
+            node.tasks = node.tasks.filter(x => x.id !== t.id);
+            refreshTasks(nodeId);
+        };
+
+        row.appendChild(cb);
+        row.appendChild(inp);
+        row.appendChild(del);
+        tb.appendChild(row);
+    });
 }
 
 function selectNode(id) {
@@ -411,7 +540,31 @@ function exportSVG() {
     
     nodes.forEach(n => {
         const el = document.getElementById('node-' + n.id); if (!el) return;
+        
+        // メインノードの描画
         o += `<rect x="${n.x}" y="${n.y}" width="${el.offsetWidth}" height="${el.offsetHeight}" rx="10" fill="${bc[n.type]}" stroke="#252830" stroke-width="1.5"/><text x="${n.x + 10}" y="${n.y + 20}" font-family="sans-serif" font-size="10" fill="${META[n.type].color}">${META[n.type].label}</text><text x="${n.x + 10}" y="${n.y + 38}" font-family="sans-serif" font-size="13" fill="#e8eaf0">${(n.text || '').replace(/</g, '&lt;').substring(0, 28)}</text>`;
+        
+        // タスクボックスの描画（存在する場合）
+        if (n.tasks && n.tasks.length > 0) {
+            let ty = n.y + el.offsetHeight + 6;
+            let th = n.tasks.length * 24 + 12;
+            o += `<rect x="${n.x}" y="${ty}" width="${el.offsetWidth}" height="${th}" rx="6" fill="#1c212b" stroke="#3a4254" stroke-dasharray="4" stroke-width="1"/>`;
+            
+            n.tasks.forEach((t, i) => {
+                let boxColor = t.done ? '#40d9a0' : '#5a5f70';
+                let textColor = t.done ? '#6b7280' : '#d1d5db';
+                let tDeco = t.done ? 'text-decoration="line-through"' : '';
+                
+                // チェックボックスの四角
+                o += `<rect x="${n.x + 8}" y="${ty + 10 + i * 24}" width="12" height="12" rx="2" fill="none" stroke="${boxColor}" stroke-width="1.5"/>`;
+                
+                // チェックマーク（完了時のみ）
+                if (t.done) o += `<path d="M${n.x + 11},${ty + 16 + i * 24} L${n.x + 13},${ty + 18 + i * 24} L${n.x + 17},${ty + 13 + i * 24}" stroke="#40d9a0" stroke-width="1.5" fill="none"/>`;
+                
+                // タスクのテキスト
+                o += `<text x="${n.x + 26}" y="${ty + 20 + i * 24}" font-family="sans-serif" font-size="11" fill="${textColor}" ${tDeco}>${(t.text || '').replace(/</g, '&lt;')}</text>`;
+            });
+        }
     });
     
     edges.forEach(edge => {
@@ -428,12 +581,21 @@ function exportSVG() {
 
 function initSample() {
     const H = wrap.clientHeight, cy = H / 2;
-    const r = createNode('root', '問題・テーマを書く', 40, cy - 35);
-    const q1 = createNode('question', '条件Aに当てはまる？', 290, cy - 35);
-    const y1 = createNode('leaf', '→ 対応策A', 540, cy - 155);
-    const n1 = createNode('question', '条件Bは？', 540, cy + 105);
-    const y2 = createNode('leaf', '→ 対応策B', 790, cy - 5);
-    const n2 = createNode('leaf', '→ 対応策C', 790, cy + 210);
+    const r = createNode('root', 'システム開発要件定義', 40, cy - 35);
+    
+    // サンプルとしてルートノードにタスクを2つ追加しておく
+    r.tasks = [
+        { id: tuid(), text: 'マインドマップのUI設計', done: true },
+        { id: tuid(), text: 'タスク管理機能の実装', done: false }
+    ];
+    refreshTasks(r.id);
+
+    const q1 = createNode('question', '機能Aは必要か？', 290, cy - 35);
+    const y1 = createNode('leaf', '→ 機能Aを実装する', 540, cy - 155);
+    const n1 = createNode('question', '代替案は？', 540, cy + 105);
+    const y2 = createNode('leaf', '→ 代替案Xを採用', 790, cy - 5);
+    const n2 = createNode('leaf', '→ 代替案Yを採用', 790, cy + 210);
+    
     edges.push({ id: euid(), from: r.id, to: q1.id, label: '' });
     edges.push({ id: euid(), from: q1.id, to: y1.id, label: 'はい' });
     edges.push({ id: euid(), from: q1.id, to: n1.id, label: 'いいえ' });
