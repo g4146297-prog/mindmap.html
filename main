@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マインドマップ プロトタイプ (保存・入出力対応)</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    margin: 0;
+    padding: 70px 20px 20px; /* 上部のツールバーの分、余白を空ける */
+    overflow-x: auto;
+  }
+
+  /* 上部のツールバー */
+  #toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: #2c3e50;
+    padding: 10px 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 100;
+    display: flex;
+    gap: 10px;
+    box-sizing: border-box;
+  }
+
+  #toolbar button {
+    padding: 8px 15px;
+    cursor: pointer;
+    background: #34495e;
+    color: white;
+    border: 1px solid #4a6278;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+
+  #toolbar button:hover { background: #4a6278; }
+  #toolbar .btn-danger { background: #c0392b; border-color: #e74c3c; margin-left: auto; }
+  #toolbar .btn-danger:hover { background: #e74c3c; }
+
+  /* マインドマップ全体のコンテナ */
+  #mindmap-container {
+    display: inline-flex;
+    padding: 20px;
+  }
+
+  /* ノードのラッパー */
+  .node-wrapper {
+    display: flex;
+    align-items: center;
+    position: relative;
+    margin: 10px 0;
+  }
+
+  .node-content {
+    display: flex;
+    align-items: center;
+    position: relative;
+  }
+
+  .node-text {
+    background: #ffffff;
+    border: 2px solid #3498db;
+    border-radius: 8px;
+    padding: 10px 15px;
+    min-width: 80px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    outline: none;
+    cursor: text;
+    transition: all 0.2s;
+    z-index: 2;
+  }
+
+  .node-text:focus {
+    border-color: #2980b9;
+    background: #ebf5fb;
+  }
+
+  /* 操作ボタン */
+  .controls {
+    display: flex;
+    gap: 5px;
+    margin-left: 10px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 2;
+  }
+
+  .node-content:hover .controls { opacity: 1; }
+
+  .node-btn {
+    background: #e0e0e0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 5px 8px;
+    font-size: 14px;
+    color: #333;
+  }
+
+  .node-btn:hover { background: #ccc; }
+  .node-btn-delete:hover { background: #ffcccc; color: #cc0000; }
+
+  /* 接続線 */
+  .children-container {
+    display: flex;
+    flex-direction: column;
+    margin-left: 30px;
+    padding-left: 20px;
+    border-left: 2px solid #bdc3c7;
+    position: relative;
+  }
+
+  .node-wrapper::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 50%;
+    width: 20px;
+    height: 2px;
+    background: #bdc3c7;
+  }
+
+  .is-root > .node-wrapper::before { display: none; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button onclick="exportJSON()">JSONエクスポート</button>
+  
+  <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importJSON(event)">
+  <button onclick="document.getElementById('import-file').click()">JSONインポート</button>
+  
+  <button class="btn-danger" onclick="clearData()">データをリセット</button>
+</div>
+
+<div id="mindmap-container">
+  </div>
+
+<script>
+  const STORAGE_KEY = 'mindmap_app_data';
+
+  // 1. ローカルストレージからのデータ読み込み
+  let mindMapData = {
+    id: 'root',
+    text: 'メインテーマ',
+    children: []
+  };
+
+  const savedData = localStorage.getItem(STORAGE_KEY);
+  if (savedData) {
+    try {
+      mindMapData = JSON.parse(savedData);
+    } catch (e) {
+      console.error("データの読み込みに失敗しました", e);
+    }
+  }
+
+  // 2. データをローカルストレージに保存する関数
+  function saveData() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mindMapData));
+  }
+
+  function generateId() {
+    return '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  // ノードの生成処理
+  function createNodeElement(nodeData, isRoot = false) {
+    const wrapper = document.createElement('div');
+    wrapper.className = isRoot ? 'is-root' : '';
+
+    const nodeWrapper = document.createElement('div');
+    nodeWrapper.className = 'node-wrapper';
+
+    const nodeContent = document.createElement('div');
+    nodeContent.className = 'node-content';
+
+    const textDiv = document.createElement('div');
+    textDiv.className = 'node-text';
+    textDiv.contentEditable = true;
+    textDiv.textContent = nodeData.text;
+    
+    // 文字入力のたびにデータを保存
+    textDiv.addEventListener('input', (e) => {
+      nodeData.text = e.target.textContent;
+      saveData();
+    });
+
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'controls';
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'node-btn';
+    addBtn.textContent = '＋';
+    addBtn.onclick = () => {
+      nodeData.children.push({
+        id: generateId(),
+        text: '新しいノード',
+        children: []
+      });
+      renderMindMap();
+    };
+    controlsDiv.appendChild(addBtn);
+
+    if (!isRoot) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'node-btn node-btn-delete';
+      delBtn.textContent = '×';
+      delBtn.onclick = () => {
+        deleteNode(mindMapData, nodeData.id);
+        renderMindMap();
+      };
+      controlsDiv.appendChild(delBtn);
+    }
+
+    nodeContent.appendChild(textDiv);
+    nodeContent.appendChild(controlsDiv);
+    nodeWrapper.appendChild(nodeContent);
+    wrapper.appendChild(nodeWrapper);
+
+    if (nodeData.children && nodeData.children.length > 0) {
+      const childrenContainer = document.createElement('div');
+      childrenContainer.className = 'children-container';
+      nodeData.children.forEach(child => {
+        childrenContainer.appendChild(createNodeElement(child));
+      });
+      nodeWrapper.appendChild(childrenContainer);
+    }
+
+    return wrapper;
+  }
+
+  function deleteNode(parentNode, targetId) {
+    if (parentNode.children) {
+      const index = parentNode.children.findIndex(child => child.id === targetId);
+      if (index !== -1) {
+        parentNode.children.splice(index, 1);
+        return true;
+      }
+      for (let child of parentNode.children) {
+        if (deleteNode(child, targetId)) return true;
+      }
+    }
+    return false;
+  }
+
+  // 描画処理（描画時に必ず保存処理も走らせる）
+  function renderMindMap() {
+    saveData();
+    const container = document.getElementById('mindmap-container');
+    container.innerHTML = '';
+    container.appendChild(createNodeElement(mindMapData, true));
+  }
+
+  // 3. JSONエクスポート機能
+  function exportJSON() {
+    const dataStr = JSON.stringify(mindMapData, null, 2); // 見やすいようにインデントを付ける
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mindmap_data.json';
+    document.body.appendChild(a);
+    a.click();
+    
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // 4. JSONインポート機能
+  function importJSON(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        if (importedData && importedData.id === 'root') {
+          mindMapData = importedData;
+          renderMindMap();
+        } else {
+          alert("マインドマップのデータ形式ではありません。");
+        }
+      } catch (err) {
+        alert("無効なJSONファイルです。");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // 連続して同じファイルを読み込めるようにリセット
+  }
+
+  // 5. データのリセット（初期化）機能
+  function clearData() {
+    if (confirm("すべてのデータを消去して初期状態に戻しますか？（エクスポートしていないデータは失われます）")) {
+      localStorage.removeItem(STORAGE_KEY);
+      mindMapData = {
+        id: 'root',
+        text: 'メインテーマ',
+        children: []
+      };
+      renderMindMap();
+    }
+  }
+
+  // 初期描画
+  renderMindMap();
+</script>
+
+</body>
+</html>
