@@ -40,9 +40,13 @@
   #canvas-wrap::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#252830 1px,transparent 1px);background-size:28px 28px;opacity:.45;z-index:0;pointer-events:none;}
   svg#svgl{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;overflow:visible;}
   svg#svgl .ehit{pointer-events:stroke;}
-  #canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;}
+  
+  /* ▼キャンバスへのクリックを背後（SVG）に貫通させる設定を追加 */
+  #canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none;}
 
-  .node{position:absolute;min-width:140px;max-width:210px;border-radius:10px;border:1.5px solid var(--border);padding:10px 28px 10px 13px;cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s;z-index:10;}
+  /* ▼ノード自体はクリックをしっかり受け付ける設定を追加 */
+  .node{position:absolute;min-width:140px;max-width:210px;border-radius:10px;border:1.5px solid var(--border);padding:10px 28px 10px 13px;cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s;z-index:10;pointer-events:auto;}
+  
   .node:hover{border-color:var(--muted);box-shadow:var(--shadow);z-index:20;}
   .node.selected{border-color:var(--accent)!important;box-shadow:0 0 0 3px rgba(91,143,255,.22),var(--shadow);z-index:30;}
   .node.dragging{cursor:grabbing;z-index:40;}
@@ -61,7 +65,7 @@
   .node:hover .ndel,.node.selected .ndel{display:block;}
   .ndel:hover{color:var(--accent2);background:rgba(255,107,138,.12);}
 
-  .port{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--muted);border:2.5px solid var(--bg);cursor:crosshair;z-index:50;opacity:0;transition:opacity .1s,transform .1s,background .1s;pointer-events:all;}
+  .port{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--muted);border:2.5px solid var(--bg);cursor:crosshair;z-index:50;opacity:0;transition:opacity .1s,transform .1s,background .1s;pointer-events:auto;}
   .node:hover .port,.node.selected .port{opacity:1;}
   .port:hover{transform:scale(1.45)!important;background:var(--accent3);}
   .port-out{right:-8px;top:50%;transform:translateY(-50%);}
@@ -70,7 +74,9 @@
   #pvl{pointer-events:none;}
   .egroup:hover .epath{stroke-width:2.5;opacity:1;}
   .ehit{stroke:transparent;stroke-width:14;fill:none;cursor:pointer;pointer-events:stroke;}
-  .elabel-inp{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:'DM Mono',monospace;font-size:10px;padding:1px 5px;outline:none;width:70px;}
+  
+  /* ▼ラベル入力欄もクリックを受け付けるように設定 */
+  .elabel-inp{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;font-family:'DM Mono',monospace;font-size:10px;padding:1px 5px;outline:none;width:70px;pointer-events:auto;}
 
   #hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap;z-index:100;pointer-events:none;}
   #ctxm{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px;z-index:9999;display:none;min-width:140px;box-shadow:var(--shadow);}
@@ -146,7 +152,6 @@ function renderNode(node) {
     el.id = 'node-' + node.id;
     el.style.cssText = `left:${node.x}px;top:${node.y}px`;
     
-    // XSS対策のため、テキスト部分は後から value で入れる
     el.innerHTML = `
         <button class="ndel" onclick="deleteNode('${node.id}')">×</button>
         <div class="nlabel">${META[node.type].label}</div>
@@ -156,13 +161,12 @@ function renderNode(node) {
     `;
     
     const ta = el.querySelector('.ntext');
-    ta.value = node.text; // ここで安全にテキストを挿入
+    ta.value = node.text; 
     ta.addEventListener('input', () => node.text = ta.value);
     
-    // テキストエリアクリック時もノードを選択状態にする
     ta.addEventListener('mousedown', e => {
         selectNode(node.id);
-        e.stopPropagation(); // ドラッグ操作を防止
+        e.stopPropagation(); 
     });
     ta.addEventListener('click', e => e.stopPropagation());
 
@@ -243,13 +247,9 @@ function addNode(type) {
     selectNode(createNode(type, def[type], x, y).id);
 }
 
-// ==========================================
-// パフォーマンス改善：ドラッグ時のイベント
-// ==========================================
 document.addEventListener('mousemove', e => {
     const wr = wrap.getBoundingClientRect(), mx = e.clientX - wr.left, my = e.clientY - wr.top;
     
-    // ドラッグ中の処理
     if (dragging) {
         const node = nodes.find(n => n.id === dragging);
         if (node) {
@@ -260,13 +260,11 @@ document.addEventListener('mousemove', e => {
                 el.style.left = node.x + 'px';
                 el.style.top = node.y + 'px';
             }
-            // DOMを再構築せず、線の座標だけを更新する（超軽量）
             updateEdgesPosition(); 
         }
         return;
     }
     
-    // 新規接続（ポートドラッグ）中の処理
     if (connecting) {
         const cx = (connecting.x + mx) / 2;
         pvl.setAttribute('d', `M${connecting.x},${connecting.y} C${cx},${connecting.y} ${cx},${my} ${mx},${my}`);
@@ -286,7 +284,7 @@ document.addEventListener('mouseup', e => {
         const tid = nodeAt(mx, my, connecting.fromId);
         if (tid && !edges.some(ed => ed.from === connecting.fromId && ed.to === tid)) {
             edges.push({ id: euid(), from: connecting.fromId, to: tid, label: '' });
-            drawEdges(); // 新しい線が増えた時だけDOM全体を再描画
+            drawEdges(); 
         }
         document.querySelectorAll('.node').forEach(el => el.classList.remove('ct'));
         pvl.setAttribute('d', '');
@@ -318,11 +316,6 @@ function box(id) {
     return { x, y, w: el.offsetWidth, h: el.offsetHeight, cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2, right: x + el.offsetWidth, bottom: y + el.offsetHeight };
 }
 
-// ==========================================
-// エッジの描画関連（分離して軽量化）
-// ==========================================
-
-// 1. DOM要素の生成（ノードの追加・削除時のみ呼ばれる）
 function drawEdges() {
     svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     edges.forEach(edge => {
@@ -333,7 +326,7 @@ function drawEdges() {
         
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         g.className = 'egroup';
-        g.id = 'edge-' + edge.id; // IDを付与して後から検索可能にする
+        g.id = 'edge-' + edge.id; 
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', d); path.setAttribute('class', 'epath');
@@ -362,7 +355,6 @@ function drawEdges() {
     });
 }
 
-// 2. 座標の更新のみ（ドラッグ中に呼ばれる）
 function updateEdgesPosition() {
     edges.forEach(edge => {
         const f = box(edge.from), t = box(edge.to);
@@ -374,11 +366,9 @@ function updateEdgesPosition() {
         const cx = (f.right + t.x) / 2;
         const d = `M${f.right},${f.cy} C${cx},${f.cy} ${cx},${t.cy} ${t.x},${t.cy}`;
         
-        // パスと判定エリアの座標を更新
         g.querySelector('.epath').setAttribute('d', d);
         g.querySelector('.ehit').setAttribute('d', d);
         
-        // ラベル入力欄の座標を更新
         const fo = g.querySelector('foreignObject');
         if (fo) {
             fo.setAttribute('x', cx - 35);
