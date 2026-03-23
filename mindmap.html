@@ -78,7 +78,7 @@
   .ntype-branch   .nlabel{color:var(--accent4);}
   .ntype-leaf     .nlabel{color:var(--accent3);}
   .ntype-question .nlabel{color:var(--accent2);}
-  .ntype-memo     .nlabel{color:var(--text);} /* 付箋ラベルは読みやすく変更 */
+  .ntype-memo     .nlabel{color:var(--text);}
   
   .ntext{font-size:13px;line-height:1.5;color:var(--text);outline:none;background:transparent;border:none;width:100%;resize:none;font-family:'Zen Kaku Gothic New',sans-serif;cursor:text;}
   
@@ -90,7 +90,6 @@
   .node:hover .ntask-add,.node.selected .ntask-add{display:block;}
   .ntask-add:hover{color:var(--accent3);background:rgba(22,163,74,.15);}
 
-  /* 🌟 カラーパレット（付箋用） */
   .color-picker { position:absolute; top:-26px; left:0; display:none; gap:6px; background:#fff; padding:4px 6px; border-radius:12px; border:1px solid var(--border); box-shadow:0 2px 6px rgba(0,0,0,0.15); z-index:50;}
   .node:hover .color-picker { display:flex; }
   .cp-dot { width:14px; height:14px; border-radius:50%; cursor:pointer; border-width:1px; border-style:solid; transition: transform 0.1s;}
@@ -157,6 +156,8 @@
   <button class="btn btn-memo"     id="ct-memo"     onclick="changeType('memo')"     disabled><span class="dot" style="background:var(--accent5)"></span>付箋</button>
 
   <div class="tr">
+    <button class="btn" onclick="createNew()" style="font-weight:bold; color:var(--accent);">✨ 新規</button>
+    <div class="sep"></div>
     <button class="btn" onclick="exportJSON()">データ保存</button>
     <button class="btn" onclick="document.getElementById('import-file').click()">データ読込</button>
     <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)">
@@ -189,7 +190,6 @@ const META = {
     memo: { label: 'メモ・付箋', color: '#ca8a04' }
 };
 
-// 🌟 データ不整合を防ぐためバージョンキーを更新
 const STORAGE_KEY = 'mindmap_data_v4';
 let nodes = [], edges = [], selectedId = null, dragging = null, dox = 0, doy = 0, connecting = null, ctxId = null, nc = 0, ec = 0;
 const $canvas = document.getElementById('canvas');
@@ -202,9 +202,6 @@ function uid() { return 'n' + (++nc); }
 function euid() { return 'e' + (++ec); }
 function tuid() { return 't' + Math.random().toString(36).substr(2, 9); }
 
-// ==========================================
-// ローカル保存・読み込み
-// ==========================================
 function saveData() {
     const data = { nodes, edges, nc, ec };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -279,13 +276,9 @@ function renderAll() {
     refreshChangeBtns();
 }
 
-// ==========================================
-// ノード操作関連
-// ==========================================
 function createNode(type, text, x, y) {
     const id = uid();
     const node = { id, type, text, x, y, tasks: [] };
-    // 付箋の初期色を設定
     if (type === 'memo') {
         node.memoColor = '#fef08a';
         node.memoBorder = '#ca8a04';
@@ -301,7 +294,6 @@ function renderNode(node) {
     el.className = `node ntype-${node.type}`;
     el.id = 'node-' + node.id;
     
-    // カスタムカラー適用（付箋用）
     let customStyle = '';
     if (node.type === 'memo') {
         const bg = node.memoColor || '#fef08a';
@@ -310,7 +302,6 @@ function renderNode(node) {
     }
     el.style.cssText = `left:${node.x}px;top:${node.y}px; ${customStyle}`;
     
-    // カラーパレットHTML作成
     let cpHTML = '';
     if (node.type === 'memo') {
         cpHTML = `
@@ -376,7 +367,6 @@ function renderNode(node) {
     refreshTasks(node.id);
 }
 
-// 🌟 付箋のカラー変更関数
 function changeMemoColor(event, id, bg, border) {
     event.stopPropagation();
     const node = nodes.find(n => n.id === id);
@@ -497,7 +487,6 @@ function changeType(type) {
         delete node.memoBorder;
     }
     
-    // HTML構造が変わるためノードを描画し直す
     const el = document.getElementById('node-' + node.id);
     if (el) el.remove();
     renderNode(node);
@@ -681,122 +670,4 @@ function autoLayout() {
         const node = nodes.find(n => n.id === id); if (!node) return;
         node.x = x; node.y = y - 35;
         const el = document.getElementById('node-' + id); 
-        if (el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
-        const kids = ch[id] || []; const tot = (kids.length - 1) * sp;
-        kids.forEach((k, i) => lay(k, x + 240, y - tot / 2 + i * sp, sp * .75));
-    }
-    
-    roots.forEach((r, i) => lay(r.id, 40, H / 2 + (i - (roots.length - 1) / 2) * 300, 130));
-    drawEdges();
-    saveData(); 
-}
-
-function clearAll() {
-    if (!confirm('すべてクリアしますか？')) return;
-    nodes = []; edges = []; $canvas.innerHTML = ''; svgl.querySelectorAll('.egroup').forEach(g => g.remove());
-    selectedId = null; nc = 0; ec = 0; refreshChangeBtns();
-    saveData(); 
-}
-
-// 🌟 SVGエクスポート出力にカスタムカラーを反映
-function exportSVG() {
-    const W = wrap.clientWidth, H = wrap.clientHeight;
-    let o = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>`;
-    
-    const bc = { root: '#dbeafe', branch: '#ffedd5', leaf: '#dcfce7', question: '#ffe4e6', memo: '#fef08a' };
-    const sc = { root: '#3b82f6', branch: '#f97316', leaf: '#22c55e', question: '#e11d48', memo: '#ca8a04' };
-    const textCol = '#1f2937';
-    
-    nodes.forEach(n => {
-        const el = document.getElementById('node-' + n.id); if (!el) return;
-        
-        let rx = (n.type === 'question') ? '16' : (n.type === 'memo' ? '2' : '10');
-        
-        let nBg = bc[n.type];
-        let nSc = sc[n.type];
-        if (n.type === 'memo') {
-            nBg = n.memoColor || nBg;
-            nSc = n.memoBorder || nSc;
-        }
-        
-        o += `<rect x="${n.x}" y="${n.y}" width="${el.offsetWidth}" height="${el.offsetHeight}" rx="${rx}" fill="${nBg}" stroke="${nSc}" stroke-width="2"/><text x="${n.x + 10}" y="${n.y + 20}" font-family="sans-serif" font-size="10" fill="${META[n.type].color}">${META[n.type].label}</text><text x="${n.x + 10}" y="${n.y + 38}" font-family="sans-serif" font-size="13" fill="${textCol}">${(n.text || '').replace(/</g, '&lt;').substring(0, 28)}</text>`;
-        
-        if (n.tasks && n.tasks.length > 0) {
-            let ty = n.y + el.offsetHeight + 6;
-            let th = n.tasks.length * 24 + 12;
-            o += `<rect x="${n.x}" y="${ty}" width="${el.offsetWidth}" height="${th}" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-dasharray="4" stroke-width="1"/>`;
-            
-            n.tasks.forEach((t, i) => {
-                let boxColor = t.done ? '#16a34a' : '#9ca3af';
-                let textColor = t.done ? '#9ca3af' : '#374151';
-                let tDeco = t.done ? 'text-decoration="line-through"' : '';
-                o += `<rect x="${n.x + 8}" y="${ty + 10 + i * 24}" width="12" height="12" rx="2" fill="none" stroke="${boxColor}" stroke-width="1.5"/>`;
-                if (t.done) o += `<path d="M${n.x + 11},${ty + 16 + i * 24} L${n.x + 13},${ty + 18 + i * 24} L${n.x + 17},${ty + 13 + i * 24}" stroke="#16a34a" stroke-width="1.5" fill="none"/>`;
-                o += `<text x="${n.x + 26}" y="${ty + 20 + i * 24}" font-family="sans-serif" font-size="11" fill="${textColor}" ${tDeco}>${(t.text || '').replace(/</g, '&lt;')}</text>`;
-            });
-        }
-    });
-    
-    edges.forEach(edge => {
-        const f = box(edge.from), t = box(edge.to); if (!f || !t) return;
-        const cx = (f.right + t.x) / 2;
-        o += `<path d="M${f.right},${f.cy} C${cx},${f.cy} ${cx},${t.cy} ${t.x},${t.cy}" stroke="#9ca3af" stroke-width="2" fill="none"/>`;
-        if (edge.label) {
-            o += `<rect x="${cx - 25}" y="${(f.cy + t.cy) / 2 - 12}" width="50" height="20" fill="#ffffff" stroke="#d1d5db" rx="4"/>`;
-            o += `<text x="${cx}" y="${(f.cy + t.cy) / 2 + 2}" text-anchor="middle" font-family="monospace" font-size="10" fill="#1f2937">${edge.label}</text>`;
-        }
-    });
-    
-    o += '</svg>';
-    const blob = new Blob([o], { type: 'image/svg+xml' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'flowchart.svg'; a.click();
-}
-
-function initSample() {
-    try {
-        const W = wrap.clientWidth || window.innerWidth || 1000;
-        const H = wrap.clientHeight || window.innerHeight || 800;
-        const cy = Math.max(H / 2, 300); 
-
-        const r = createNode('root', 'システム開発要件定義', 40, cy - 35);
-        r.tasks = [
-            { id: tuid(), text: 'マインドマップのUI設計', done: true },
-            { id: tuid(), text: 'タスク管理機能の実装', done: false }
-        ];
-        refreshTasks(r.id);
-
-        const q1 = createNode('question', '機能Aは必要か？', 290, cy - 35);
-        const y1 = createNode('leaf', '→ 機能Aを実装する', 540, cy - 155);
-        const n1 = createNode('question', '代替案は？', 540, cy + 105);
-        const y2 = createNode('leaf', '→ 代替案Xを採用', 790, cy - 5);
-        
-        const m1 = createNode('memo', '※予算の都合上\n今期は見送る可能性あり', 790, cy + 160);
-        
-        edges.push({ id: euid(), from: r.id, to: q1.id, label: '' });
-        edges.push({ id: euid(), from: q1.id, to: y1.id, label: 'はい' });
-        edges.push({ id: euid(), from: q1.id, to: n1.id, label: 'いいえ' });
-        edges.push({ id: euid(), from: n1.id, to: y2.id, label: 'はい' });
-        edges.push({ id: euid(), from: n1.id, to: m1.id, label: 'いいえ' });
-        
-        drawEdges(); 
-        refreshChangeBtns();
-        saveData(); 
-    } catch(e) {
-        console.error("Initialization error:", e);
-    }
-}
-
-function startApp() { 
-    if (!loadData()) {
-        initSample(); 
-    }
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(startApp, 150));
-} else {
-    setTimeout(startApp, 150);
-}
-</script>
-</body>
-</html>
+        if (el) { el.style.left = node.x + 'px'; el.style.top = node.
