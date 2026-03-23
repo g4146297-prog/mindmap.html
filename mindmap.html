@@ -90,6 +90,33 @@
   .node:hover .ntask-add,.node.selected .ntask-add{display:block;}
   .ntask-add:hover{color:var(--accent3);background:rgba(22,163,74,.15);}
 
+  /* 🌟 子ノード折りたたみ・展開ボタン */
+  .ncollapse {
+    position: absolute;
+    right: -24px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    background: #ffffff;
+    border: 1px solid #9ca3af;
+    border-radius: 50%;
+    font-size: 14px;
+    line-height: 12px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 60;
+    color: #374151;
+    display: none; /* JSで子がいる場合のみ表示 */
+    user-select: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .ncollapse:hover {
+    background: #f3f4f6;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   .color-picker { position:absolute; top:-26px; left:0; display:none; gap:6px; background:#fff; padding:4px 6px; border-radius:12px; border:1px solid var(--border); box-shadow:0 2px 6px rgba(0,0,0,0.15); z-index:50;}
   .node:hover .color-picker { display:flex; }
   .cp-dot { width:14px; height:14px; border-radius:50%; cursor:pointer; border-width:1px; border-style:solid; transition: transform 0.1s;}
@@ -178,7 +205,7 @@
   <div id="canvas"></div>
 </div>
 
-<div id="hint">ポートをドラッグ → 接続 ／ エッジをクリック → 削除 ／ 📋 → タスク追加</div>
+<div id="hint">ポートをドラッグ → 接続 ／ 接続線をクリック → 削除 ／ ノード右側[－] → 折りたたみ</div>
 <div id="ctxm"><button onclick="ctxDel()" style="color:var(--accent2)">🗑 ノード削除</button></div>
 
 <script>
@@ -192,6 +219,11 @@ const META = {
 
 const STORAGE_KEY = 'mindmap_data_v4';
 let nodes = [], edges = [], selectedId = null, dragging = null, dox = 0, doy = 0, connecting = null, ctxId = null, nc = 0, ec = 0;
+
+// 🌟 折りたたみ状態管理用の変数
+let hiddenNodes = new Set();
+let hiddenEdges = new Set();
+
 const $canvas = document.getElementById('canvas');
 const svgl = document.getElementById('svgl');
 const pvl = document.getElementById('pvl');
@@ -267,7 +299,6 @@ function importJSON(event) {
 
 function renderAll() {
     $canvas.innerHTML = '';
-    // SVG要素の削除処理（修正ポイント）
     svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     selectedId = null;
     nodes.forEach(n => {
@@ -279,7 +310,8 @@ function renderAll() {
 
 function createNode(type, text, x, y) {
     const id = uid();
-    const node = { id, type, text, x, y, tasks: [] };
+    // collapsed状態を初期追加
+    const node = { id, type, text, x, y, tasks: [], collapsed: false };
     if (type === 'memo') {
         node.memoColor = '#fef08a';
         node.memoBorder = '#ca8a04';
@@ -315,8 +347,10 @@ function renderNode(node) {
         `;
     }
     
+    // 🌟 折りたたみボタンをHTMLに追加
     el.innerHTML = `
         ${cpHTML}
+        <div class="ncollapse" onmousedown="event.stopPropagation()" onclick="toggleCollapse('${node.id}', event)">-</div>
         <button class="ntask-add" onclick="addTask('${node.id}')" title="タスクを追加">📋</button>
         <button class="ndel" onclick="deleteNode('${node.id}')" title="削除">×</button>
         <div class="nlabel">${META[node.type].label}</div>
@@ -349,7 +383,7 @@ function renderNode(node) {
     });
 
     el.addEventListener('mousedown', e => {
-        if (e.target.classList.contains('port') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.classList.contains('cp-dot')) return;
+        if (e.target.classList.contains('port') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.classList.contains('cp-dot') || e.target.classList.contains('ncollapse')) return;
         e.preventDefault();
         selectNode(node.id);
         const r = el.getBoundingClientRect();
@@ -366,6 +400,76 @@ function renderNode(node) {
 
     $canvas.appendChild(el);
     refreshTasks(node.id);
+}
+
+// 🌟 折りたたみ切り替え処理
+function toggleCollapse(id, event) {
+    event.stopPropagation();
+    const node = nodes.find(n => n.id === id);
+    if (node) {
+        node.collapsed = !node.collapsed;
+        saveData();
+        updateVisibility();
+        updateCollapseButtons();
+        updateEdgesPosition();
+    }
+}
+
+// 🌟 折りたたみボタンの表示/非表示・状態更新
+function updateCollapseButtons() {
+    nodes.forEach(n => {
+        const el = document.getElementById('node-' + n.id);
+        if (!el) return;
+        const btn = el.querySelector('.ncollapse');
+        if (!btn) return;
+        
+        // 子ノード（自分から出る線）があるか判定
+        const hasChildren = edges.some(e => e.from === n.id);
+        if (hasChildren) {
+            btn.style.display = 'block';
+            btn.textContent = n.collapsed ? '+' : '-';
+        } else {
+            btn.style.display = 'none';
+            n.collapsed = false; // 子がなくなったら自動リセット
+        }
+    });
+}
+
+// 🌟 折りたたみによる非表示処理
+function updateVisibility() {
+    hiddenNodes.clear();
+    hiddenEdges.clear();
+
+    // 再帰的に子孫ノードを隠す関数
+    function hideSubtree(nodeId, visited) {
+        if (visited.has(nodeId)) return;
+        visited.add(nodeId);
+        edges.filter(e => e.from === nodeId).forEach(edge => {
+            hiddenEdges.add(edge.id);
+            hiddenNodes.add(edge.to);
+            hideSubtree(edge.to, visited);
+        });
+    }
+
+    nodes.forEach(n => {
+        if (n.collapsed && !hiddenNodes.has(n.id)) {
+            hideSubtree(n.id, new Set());
+        }
+    });
+
+    // ノードのDOM表示制御
+    nodes.forEach(n => {
+        const el = document.getElementById('node-' + n.id);
+        if (el) el.style.display = hiddenNodes.has(n.id) ? 'none' : '';
+    });
+
+    // エッジのDOM表示制御
+    edges.forEach(e => {
+        const el = document.getElementById('edge-' + e.id);
+        const isHidden = hiddenNodes.has(e.from) || hiddenNodes.has(e.to) || hiddenEdges.has(e.id);
+        if (isHidden) hiddenEdges.add(e.id); // SVG出力用に完全に記録
+        if (el) el.style.display = isHidden ? 'none' : '';
+    });
 }
 
 function changeMemoColor(event, id, bg, border) {
@@ -545,7 +649,10 @@ document.addEventListener('mousemove', e => {
         pvl.setAttribute('d', `M${connecting.x},${connecting.y} C${cx},${connecting.y} ${cx},${my} ${mx},${my}`);
         document.querySelectorAll('.node').forEach(el => el.classList.remove('ct'));
         const tid = nodeAt(mx, my, connecting.fromId);
-        if (tid) document.getElementById('node-' + tid)?.classList.add('ct');
+        // 折りたたまれて非表示のノードには繋げられないように制御
+        if (tid && !hiddenNodes.has(tid)) {
+            document.getElementById('node-' + tid)?.classList.add('ct');
+        }
     }
 });
 
@@ -558,7 +665,7 @@ document.addEventListener('mouseup', e => {
     if (connecting) {
         const wr = wrap.getBoundingClientRect(), mx = e.clientX - wr.left, my = e.clientY - wr.top;
         const tid = nodeAt(mx, my, connecting.fromId);
-        if (tid && !edges.some(ed => ed.from === connecting.fromId && ed.to === tid)) {
+        if (tid && !hiddenNodes.has(tid) && !edges.some(ed => ed.from === connecting.fromId && ed.to === tid)) {
             edges.push({ id: euid(), from: connecting.fromId, to: tid, label: '' });
             drawEdges(); 
             saveData(); 
@@ -578,7 +685,7 @@ function ctxDel() { if (ctxId) deleteNode(ctxId); ctxm.style.display = 'none'; }
 
 function nodeAt(mx, my, excl) {
     for (const node of [...nodes].reverse()) {
-        if (node.id === excl) continue;
+        if (node.id === excl || hiddenNodes.has(node.id)) continue; // 非表示ノードは無視
         const el = document.getElementById('node-' + node.id); 
         if (!el) continue;
         if (mx >= node.x && mx <= node.x + el.offsetWidth && my >= node.y && my <= node.y + el.offsetHeight) return node.id;
@@ -594,7 +701,6 @@ function box(id) {
 }
 
 function drawEdges() {
-    // 【修正ポイント】SVG要素から既存の線を消す処理の不具合を解消
     svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     
     edges.forEach(edge => {
@@ -604,7 +710,6 @@ function drawEdges() {
         const d = `M${f.right},${f.cy} C${cx},${f.cy} ${cx},${t.cy} ${t.x},${t.cy}`;
         
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        // 【修正ポイント】SVG要素には classList や setAttribute を使って正しくクラスを付与する
         g.setAttribute('class', 'egroup');
         g.id = 'edge-' + edge.id; 
 
@@ -638,6 +743,10 @@ function drawEdges() {
         g.appendChild(fo);
         svgl.insertBefore(g, pvl);
     });
+
+    // エッジ再描画後に表示・非表示を再評価
+    updateVisibility();
+    updateCollapseButtons();
 }
 
 function updateEdgesPosition() {
@@ -664,6 +773,12 @@ function updateEdgesPosition() {
 
 function autoLayout() {
     if (!nodes.length) return;
+    
+    // 自動整列時は正確なサイズを取得するためすべて展開する
+    nodes.forEach(n => n.collapsed = false);
+    updateVisibility();
+    updateCollapseButtons();
+
     const ch = {}, hp = new Set();
     nodes.forEach(n => { ch[n.id] = []; });
     edges.forEach(e => { ch[e.from]?.push(e.to); hp.add(e.to); });
@@ -703,6 +818,7 @@ function createNew() {
     saveData(); 
 }
 
+// 🌟 出力時に非表示ノードを除外
 function exportSVG() {
     const W = wrap.clientWidth, H = wrap.clientHeight;
     let o = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>`;
@@ -712,8 +828,9 @@ function exportSVG() {
     const textCol = '#1f2937';
     
     nodes.forEach(n => {
-        const el = document.getElementById('node-' + n.id); if (!el) return;
+        if (hiddenNodes.has(n.id)) return; // 非表示ならスキップ
         
+        const el = document.getElementById('node-' + n.id); if (!el) return;
         let rx = (n.type === 'question') ? '16' : (n.type === 'memo' ? '2' : '10');
         
         let nBg = bc[n.type];
@@ -742,6 +859,8 @@ function exportSVG() {
     });
     
     edges.forEach(edge => {
+        if (hiddenEdges.has(edge.id)) return; // 非表示ならスキップ
+        
         const f = box(edge.from), t = box(edge.to); if (!f || !t) return;
         const cx = (f.right + t.x) / 2;
         o += `<path d="M${f.right},${f.cy} C${cx},${f.cy} ${cx},${t.cy} ${t.x},${t.cy}" stroke="#9ca3af" stroke-width="2" fill="none"/>`;
