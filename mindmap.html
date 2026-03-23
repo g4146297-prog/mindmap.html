@@ -267,6 +267,7 @@ function importJSON(event) {
 
 function renderAll() {
     $canvas.innerHTML = '';
+    // SVG要素の削除処理（修正ポイント）
     svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     selectedId = null;
     nodes.forEach(n => {
@@ -593,7 +594,9 @@ function box(id) {
 }
 
 function drawEdges() {
+    // 【修正ポイント】SVG要素から既存の線を消す処理の不具合を解消
     svgl.querySelectorAll('.egroup').forEach(g => g.remove());
+    
     edges.forEach(edge => {
         const f = box(edge.from), t = box(edge.to); 
         if (!f || !t) return;
@@ -601,7 +604,8 @@ function drawEdges() {
         const d = `M${f.right},${f.cy} C${cx},${f.cy} ${cx},${t.cy} ${t.x},${t.cy}`;
         
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        g.className = 'egroup';
+        // 【修正ポイント】SVG要素には classList や setAttribute を使って正しくクラスを付与する
+        g.setAttribute('class', 'egroup');
         g.id = 'edge-' + edge.id; 
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -687,13 +691,11 @@ function clearAll() {
     saveData(); 
 }
 
-// 🌟 新規作成の処理
 function createNew() {
     if (!confirm('現在のデータを破棄して新しく作成しますか？\n（必要な場合は事前に「データ保存」を行ってください）')) return;
     nodes = []; edges = []; $canvas.innerHTML = ''; svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     selectedId = null; nc = 0; ec = 0; refreshChangeBtns();
     
-    const W = wrap.clientWidth || window.innerWidth || 1000;
     const H = wrap.clientHeight || window.innerHeight || 800;
     const cy = Math.max(H / 2, 300); 
     selectNode(createNode('root', '新しいテーマ', 40, cy - 35).id);
