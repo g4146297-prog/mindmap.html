@@ -70,7 +70,7 @@
   .node:hover .ntask-add,.node.selected .ntask-add{display:block;}
   .ntask-add:hover{color:var(--accent3);background:rgba(64,217,160,.12);}
 
-  /* タスク・メモ用の子ボード（ノードの下にぶら下がるデザイン） */
+  /* タスク・メモ用の子ボード */
   .task-board {
     position: absolute;
     top: calc(100% + 6px);
@@ -155,9 +155,13 @@
   <button class="btn btn-branch"   id="ct-branch"   onclick="changeType('branch')"   disabled><span class="dot" style="background:#ffb347"></span>条件</button>
   <button class="btn btn-leaf"     id="ct-leaf"     onclick="changeType('leaf')"     disabled><span class="dot" style="background:#40d9a0"></span>結論</button>
   <div class="tr">
+    <button class="btn" onclick="exportJSON()">データ保存</button>
+    <button class="btn" onclick="document.getElementById('import-file').click()">データ読込</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)">
+    <div class="sep"></div>
     <button class="btn" onclick="autoLayout()">自動整列</button>
     <button class="btn btn-danger" onclick="clearAll()">クリア</button>
-    <button class="btn btn-primary" onclick="exportSVG()">エクスポート</button>
+    <button class="btn btn-primary" onclick="exportSVG()">画像出力</button>
   </div>
 </header>
 
@@ -182,6 +186,7 @@ const META = {
     leaf: { label: '結論', color: '#40d9a0' }
 };
 
+const STORAGE_KEY = 'mindmap_data_v2';
 let nodes = [], edges = [], selectedId = null, dragging = null, dox = 0, doy = 0, connecting = null, ctxId = null, nc = 0, ec = 0;
 const $canvas = document.getElementById('canvas');
 const svgl = document.getElementById('svgl');
@@ -193,11 +198,94 @@ function uid() { return 'n' + (++nc); }
 function euid() { return 'e' + (++ec); }
 function tuid() { return 't' + Math.random().toString(36).substr(2, 9); }
 
+// ==========================================
+// データのローカル保存・読み込み処理
+// ==========================================
+function saveData() {
+    const data = { nodes, edges, nc, ec };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function loadData() {
+    const json = localStorage.getItem(STORAGE_KEY);
+    if (json) {
+        try {
+            const data = JSON.parse(json);
+            if (data.nodes && data.edges) {
+                nodes = data.nodes;
+                edges = data.edges;
+                nc = data.nc || nodes.length;
+                ec = data.ec || edges.length;
+                renderAll();
+                return true;
+            }
+        } catch(e) {
+            console.error("ローカルデータの読み込みに失敗しました", e);
+        }
+    }
+    return false;
+}
+
+// ==========================================
+// データのJSONエクスポート・インポート処理
+// ==========================================
+function exportJSON() {
+    const dataStr = JSON.stringify({ nodes, edges, nc, ec }, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mindmap_backup.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function importJSON(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.nodes && data.edges) {
+                nodes = data.nodes;
+                edges = data.edges;
+                nc = data.nc || nodes.length;
+                ec = data.ec || edges.length;
+                renderAll();
+                saveData(); // インポート直後に保存
+            } else {
+                alert("無効なマインドマップデータです。");
+            }
+        } catch(err) {
+            alert("ファイルの読み込みに失敗しました。正しいJSONファイルか確認してください。");
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // 同じファイルを再度選べるようにリセット
+}
+
+// 画面全体の再描画（データロード時等に使用）
+function renderAll() {
+    $canvas.innerHTML = '';
+    svgl.querySelectorAll('.egroup').forEach(g => g.remove());
+    selectedId = null;
+    nodes.forEach(n => renderNode(n));
+    drawEdges();
+    refreshChangeBtns();
+}
+
+// ==========================================
+// ノード操作関連
+// ==========================================
 function createNode(type, text, x, y) {
     const id = uid();
     const node = { id, type, text, x, y, tasks: [] };
     nodes.push(node);
     renderNode(node);
+    saveData(); // ノード作成時に保存
     return node;
 }
 
@@ -218,7 +306,12 @@ function renderNode(node) {
     
     const ta = el.querySelector('.ntext');
     ta.value = node.text; 
-    ta.addEventListener('input', () => node.text = ta.value);
+    
+    // テキスト編集時に保存
+    ta.addEventListener('input', () => {
+        node.text = ta.value;
+        saveData();
+    });
     
     ta.addEventListener('mousedown', e => {
         selectNode(node.id);
@@ -262,6 +355,7 @@ function addTask(nodeId) {
     if (!node.tasks) node.tasks = [];
     node.tasks.push({ id: tuid(), text: '', done: false });
     refreshTasks(nodeId);
+    saveData();
 }
 
 // タスク（サブボード）の描画更新
@@ -301,13 +395,17 @@ function refreshTasks(nodeId) {
         inp.placeholder = 'タスクを入力...';
         if (t.done) inp.classList.add('done');
         
+        // チェック状況の変更を保存
         cb.addEventListener('change', e => {
             t.done = e.target.checked;
             inp.classList.toggle('done', t.done);
+            saveData();
         });
 
+        // タスクテキストの変更を保存
         inp.addEventListener('input', e => {
             t.text = e.target.value;
+            saveData();
         });
 
         const del = document.createElement('button');
@@ -316,6 +414,7 @@ function refreshTasks(nodeId) {
         del.onclick = () => {
             node.tasks = node.tasks.filter(x => x.id !== t.id);
             refreshTasks(nodeId);
+            saveData();
         };
 
         row.appendChild(cb);
@@ -352,6 +451,7 @@ function changeType(type) {
     el.className = `node ntype-${type} selected`;
     el.querySelector('.nlabel').textContent = META[type].label;
     refreshChangeBtns();
+    saveData(); // 種類変更時に保存
 }
 
 function deleteNode(id) {
@@ -360,20 +460,20 @@ function deleteNode(id) {
     document.getElementById('node-' + id)?.remove();
     drawEdges();
     if (selectedId === id) { selectedId = null; refreshChangeBtns(); }
+    saveData(); // 削除時に保存
 }
 
 function deleteEdge(eid) { 
     edges = edges.filter(e => e.id !== eid); 
     drawEdges(); 
+    saveData(); // 削除時に保存
 }
 
 function addNode(type) {
-    // 【修正】画面外（マイナス座標）への生成を防ぐための安全値確保
     const W = wrap.clientWidth || window.innerWidth || 800;
     const H = wrap.clientHeight || window.innerHeight || 600;
     const x = Math.max(40, 60 + Math.random() * (W - 280));
     const y = Math.max(40, 40 + Math.random() * (H - 120));
-    
     const def = { root: 'テーマ・問い', question: 'どちらですか？', branch: '条件 / 場合', leaf: '結論・アクション' };
     selectNode(createNode(type, def[type], x, y).id);
 }
@@ -409,6 +509,7 @@ document.addEventListener('mouseup', e => {
     if (dragging) {
         document.getElementById('node-' + dragging)?.classList.remove('dragging');
         dragging = null;
+        saveData(); // ドラッグ移動完了時に保存
     }
     if (connecting) {
         const wr = wrap.getBoundingClientRect(), mx = e.clientX - wr.left, my = e.clientY - wr.top;
@@ -416,6 +517,7 @@ document.addEventListener('mouseup', e => {
         if (tid && !edges.some(ed => ed.from === connecting.fromId && ed.to === tid)) {
             edges.push({ id: euid(), from: connecting.fromId, to: tid, label: '' });
             drawEdges(); 
+            saveData(); // エッジ接続完了時に保存
         }
         document.querySelectorAll('.node').forEach(el => el.classList.remove('ct'));
         pvl.setAttribute('d', '');
@@ -476,7 +578,12 @@ function drawEdges() {
         const inp = document.createElement('input'); 
         inp.type = 'text'; inp.className = 'elabel-inp';
         inp.value = edge.label; inp.placeholder = 'ラベル';
-        inp.addEventListener('input', ev => edge.label = ev.target.value);
+        
+        // ラベル変更時に保存
+        inp.addEventListener('input', ev => {
+            edge.label = ev.target.value;
+            saveData();
+        });
         inp.addEventListener('mousedown', ev => ev.stopPropagation());
         inp.addEventListener('click', ev => ev.stopPropagation());
         
@@ -527,12 +634,14 @@ function autoLayout() {
     
     roots.forEach((r, i) => lay(r.id, 40, H / 2 + (i - (roots.length - 1) / 2) * 300, 130));
     drawEdges();
+    saveData(); // 自動整列後に保存
 }
 
 function clearAll() {
     if (!confirm('すべてクリアしますか？')) return;
     nodes = []; edges = []; $canvas.innerHTML = ''; svgl.querySelectorAll('.egroup').forEach(g => g.remove());
     selectedId = null; nc = 0; ec = 0; refreshChangeBtns();
+    saveData(); // クリア時に保存
 }
 
 function exportSVG() {
@@ -573,15 +682,14 @@ function exportSVG() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'flowchart.svg'; a.click();
 }
 
+// サンプルデータ初期化
 function initSample() {
     try {
-        // 【修正】画面外配置を防ぐため、最低限の高さを担保
         const W = wrap.clientWidth || window.innerWidth || 1000;
         const H = wrap.clientHeight || window.innerHeight || 800;
         const cy = Math.max(H / 2, 300); 
 
         const r = createNode('root', 'システム開発要件定義', 40, cy - 35);
-        
         r.tasks = [
             { id: tuid(), text: 'マインドマップのUI設計', done: true },
             { id: tuid(), text: 'タスク管理機能の実装', done: false }
@@ -601,17 +709,25 @@ function initSample() {
         edges.push({ id: euid(), from: n1.id, to: n2.id, label: 'いいえ' });
         drawEdges(); 
         refreshChangeBtns();
+        saveData(); // 初期化時に保存
     } catch(e) {
         console.error("Initialization error:", e);
     }
 }
 
-// 【修正】Streamlitのiframe読み込みタイミングのズレに対応
-function startApp() { setTimeout(initSample, 150); }
+// アプリケーション起動処理
+function startApp() { 
+    // まずローカル保存データからの復元を試みる
+    if (!loadData()) {
+        // データがなければサンプルを表示
+        initSample(); 
+    }
+}
+
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(startApp, 150));
 } else {
-    startApp();
+    setTimeout(startApp, 150);
 }
 </script>
 </body>
